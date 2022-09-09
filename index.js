@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
-const { MongoClient, Logger } = require("mongodb");
+const { MongoClient } = require("mongodb");
 const objectId = require("mongodb").ObjectId;
 require("dotenv").config();
 const port = process.env.PORT || 5000;
@@ -15,7 +15,6 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster
 const client = new MongoClient(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  monitorCommands: true,
 });
 
 const verifyJWT = (req, res, next) => {
@@ -42,10 +41,10 @@ async function run() {
     const bookCollection = database.collection("books");
     const userCollection = database.collection("users");
 
-    Logger.setLevel("debug");
-    client.on("commandStarted", (event) => console.debug(event));
-    client.on("commandSucceeded", (event) => console.debug(event));
-    client.on("commandFailed", (event) => console.debug(event));
+    // Logger.setLevel("debug");
+    // client.on("commandStarted", (event) => console.debug(event));
+    // client.on("commandSucceeded", (event) => console.debug(event));
+    // client.on("commandFailed", (event) => console.debug(event));
 
     // ADD USERS
     app.post("/addUser", async (req, res) => {
