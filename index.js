@@ -17,6 +17,7 @@ const client = new MongoClient(uri, {
   useUnifiedTopology: true,
   monitorCommands: true,
 });
+
 const verifyJWT = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -40,19 +41,11 @@ async function run() {
     const database = client.db("LibraryApp");
     const bookCollection = database.collection("books");
     const userCollection = database.collection("users");
+
     Logger.setLevel("debug");
     client.on("commandStarted", (event) => console.debug(event));
     client.on("commandSucceeded", (event) => console.debug(event));
     client.on("commandFailed", (event) => console.debug(event));
-    const verifyAdmin = async (req, res, next) => {
-      const requester = req.decoded.email;
-      const requesterAccount = await userCollection.findOne({
-        email: requester,
-      });
-      if (requesterAccount.role === "admin") {
-        next();
-      }
-    };
 
     // ADD USERS
     app.post("/addUser", async (req, res) => {
@@ -166,7 +159,6 @@ async function run() {
       res.json(result);
     });
   } finally {
-    //   await client.close();
   }
 }
 run().catch(console.dir);
