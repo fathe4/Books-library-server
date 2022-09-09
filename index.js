@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
-const { MongoClient } = require("mongodb");
+const { MongoClient, Logger } = require("mongodb");
 const objectId = require("mongodb").ObjectId;
 require("dotenv").config();
 const port = process.env.PORT || 5000;
@@ -31,6 +31,7 @@ const verifyJWT = (req, res, next) => {
     next();
   });
 };
+
 const getMinute = (date) =>
   Math.floor((Date.now() - new Date(date).getTime()) / 1000) / 60;
 
@@ -41,10 +42,23 @@ async function run() {
     const bookCollection = database.collection("books");
     const userCollection = database.collection("users");
 
-    // Logger.setLevel("debug");
-    // client.on("commandStarted", (event) => console.debug(event));
-    // client.on("commandSucceeded", (event) => console.debug(event));
-    // client.on("commandFailed", (event) => console.debug(event));
+    Logger.setLevel("debug");
+    client.on("commandStarted", (event) => console.debug(event));
+    client.on("commandSucceeded", (event) => console.debug(event));
+    client.on("commandFailed", (event) => console.debug(event));
+
+    const verifyCreator = async (req, res, next) => {
+      const requester = req.decoded.email;
+      const requesterUser = await userCollection.findOne({
+        email: requester,
+      });
+      if (requesterUser.role.includes("CREATOR")) {
+        return next();
+      }
+      return res
+        .status(401)
+        .send({ message: "You are not allowed to create books" });
+    };
 
     // ADD USERS
     app.post("/addUser", async (req, res) => {
@@ -83,7 +97,7 @@ async function run() {
     });
 
     // CREATE BOOK
-    app.post("/books/", verifyJWT, async (req, res) => {
+    app.post("/books/", verifyJWT, verifyCreator, async (req, res) => {
       const { title, email, description, name, url, uploadDate } = req.body;
       const bookDetails = {
         title,
@@ -134,7 +148,7 @@ async function run() {
     });
 
     // UPDATE BOOK
-    app.put("/book/:id", verifyJWT, async (req, res) => {
+    app.put("/book/:id", verifyJWT, verifyCreator, async (req, res) => {
       const bookId = req.params.id;
       let setData = {
         title: req.body.title,
