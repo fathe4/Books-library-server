@@ -1,6 +1,7 @@
 const express = require("express");
 const app = express();
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 const cors = require("cors");
 const { MongoClient, Logger } = require("mongodb");
 const objectId = require("mongodb").ObjectId;
@@ -8,7 +9,13 @@ require("dotenv").config();
 const port = process.env.PORT || 5000;
 
 // MIDDLEWARE
-app.use(cors());
+// app.use(cors());
+const corsOptions = {
+  origin: "http://localhost:3000",
+  credentials: true, //access-control-allow-credentials:true
+  optionSuccessStatus: 200,
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.wanl6.mongodb.net/myFirstDatabase?retryWrites=true&w=majority`;
@@ -18,11 +25,10 @@ const client = new MongoClient(uri, {
 });
 
 const verifyJWT = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
+  const token = req.headers.accesstoken;
+  if (!token) {
     res.status(401).send({ message: "Unauthorized access" });
   }
-  const token = authHeader.split(" ")[1];
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
     if (err) {
       return res.status(403).send({ message: "Forbidden access" });
@@ -59,6 +65,73 @@ async function run() {
         .status(401)
         .send({ message: "You are not allowed to create books" });
     };
+
+    //   REGISTER USER
+    app.post("/register", async (req, res) => {
+      const { username, email, password } = req.body;
+      bcrypt.hash(password, 10, async (err, hashedPass) => {
+        const newUser = {
+          username,
+          email,
+          password: hashedPass,
+          role: ["VIEW_ALL"],
+        };
+        const isUserExist = await userCollection.findOne({ email });
+        if (!isUserExist) {
+          const result = await userCollection.insertOne(newUser);
+          if (result.insertedId) {
+            const token = jwt.sign(
+              { email: email },
+              process.env.ACCESS_TOKEN_SECRET
+            );
+            return res.send({
+              status: "success",
+              token,
+              user: { username, email, role: ["VIEW_ALL"] },
+              message: "Successfully registered",
+            });
+          }
+          return res
+            .status(401)
+            .send({ status: "failed", message: "something is wrong" });
+        }
+        return res.status(401).send({
+          status: "failed",
+          message: "User Already Registered",
+        });
+      });
+    });
+
+    //   LOGIN USER
+    app.post("/login", async (req, res) => {
+      const { email, password } = req.body;
+      const user = await userCollection.findOne({ email });
+      if (user) {
+        bcrypt.compare(password, user.password, (err, result) => {
+          if (err) {
+            res.json({ error: err });
+          }
+          if (result) {
+            let token = jwt.sign(
+              { email: email },
+              process.env.ACCESS_TOKEN_SECRET
+            );
+            res.json({
+              status: "success",
+              token,
+              user: { email, username: user.username, role: user.role },
+              message: "Successfully logged in",
+            });
+          } else {
+            res
+              .status(401)
+              .send({ status: "failed", message: "password doesn't match" });
+          }
+        });
+      } else {
+        res.status(401).send({ status: "failed", message: "No user found" });
+      }
+    });
 
     // ADD USERS
     app.post("/addUser", async (req, res) => {
@@ -98,22 +171,14 @@ async function run() {
 
     // CREATE BOOK
     app.post("/books/", verifyJWT, verifyCreator, async (req, res) => {
-      const { title, email, description, name, url, uploadDate } = req.body;
-      const bookDetails = {
-        title,
-        description,
-        email,
-        name,
-        uploadDate,
-      };
-      const result = await bookCollection.insertOne(bookDetails);
+      const result = await bookCollection.insertOne(req.body.bookDetails);
       res.json(result);
     });
 
     // DISPLAY BOOKS
     app.get("/books", verifyJWT, async (req, res) => {
       const oldBooks = req.query.old;
-      const newBooks = req.query.new;
+      const newBooks = req.query.New;
       const userEmail = req.query.email;
       const cursor = bookCollection.find(userEmail ? { email: userEmail } : {});
       const books = await cursor.toArray();
@@ -143,22 +208,18 @@ async function run() {
         const filter = { _id: objectId(id) };
         const cursor = bookCollection.find(filter);
         const result = await cursor.toArray();
-        res.json(result);
+        res.json(result[0]);
       }
     });
 
     // UPDATE BOOK
     app.put("/book/:id", verifyJWT, verifyCreator, async (req, res) => {
       const bookId = req.params.id;
-      let setData = {
-        title: req.body.title,
-        description: req.body.description,
-      };
       const filter = { _id: objectId(bookId) };
       const options = { upsert: true };
 
       const updateDoc = {
-        $set: setData,
+        $set: req.body.bookDetails,
       };
       const result = await bookCollection.updateOne(filter, updateDoc, options);
       res.json(result);
@@ -166,7 +227,7 @@ async function run() {
 
     // DELETE BOOK
     app.delete("/books/delete", verifyJWT, async (req, res) => {
-      const id = req.query.id;
+      const id = req.body.id;
       const query = { _id: objectId(id) };
       const result = await bookCollection.deleteOne(query);
       res.json(result);
